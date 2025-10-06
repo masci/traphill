@@ -3,16 +3,13 @@ import sys
 import cv2
 from ultralytics import YOLO  # New import for modern YOLO usage
 
-# --- ULTRALYTICS YOLO CONFIGURATION ---
-# YOLOv8n (nano) is highly efficient. This model file is downloaded automatically by Ultralytics.
+# YOLO config
 YOLO_MODEL = "yolov8n.pt"
 CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence to consider a detection
-
-# COCO dataset class IDs for common vehicles:
 # 2: car, 3: motorcycle, 5: bus, 7: truck
 VEHICLE_CLASS_IDS = [2, 3, 5, 7]
 
-# --- TRACKING & SPEED CONFIGURATION ---
+# Global config
 VIDEO_PATH = "cars_passing.mp4"
 FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
@@ -73,7 +70,7 @@ def main():
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
     global next_object_id, current_frame_number, tracked_objects
 
-    # --- 1. Load YOLO Model ---
+    # Load YOLO Model
     try:
         # Ultralytics automatically handles model downloading and loading
         model = YOLO(YOLO_MODEL)
@@ -86,7 +83,7 @@ def main():
         print(f"Error loading YOLO model with Ultralytics: {e}")
         return 1
 
-    # --- 2. Video Capture Setup ---
+    # Video Capture Setup
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
         print(f"Error: Could not open video file at {VIDEO_PATH}. Check the path.")
@@ -102,8 +99,6 @@ def main():
 
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         height, width, _ = frame.shape
-
-        # --- 3. YOLO Detection with Ultralytics ---
 
         # Predict on the frame (setting verbose=False suppresses logging for cleaner output)
         results = model.predict(
@@ -139,8 +134,6 @@ def main():
                     }
                 )
 
-        # --- 4. Tracking and Speed Calculation Logic ---
-
         # Mark all existing objects as potentially lost
         for obj_id in tracked_objects:
             tracked_objects[obj_id]["detected"] = False
@@ -155,9 +148,8 @@ def main():
             color = (0, 255, 255) if class_name == "car" else (255, 165, 0)
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
 
-            # --- Simple Object ID and Tracking ---
-            matched_id = -1
             # Try to match the current car to an existing tracked object using proximity
+            matched_id = -1
             for obj_id, data in tracked_objects.items():
                 # Check proximity based on centroid X position
                 if abs(data["center"][0] - centroid_x) < 80:
@@ -181,17 +173,15 @@ def main():
                 tracked_objects[matched_id]["center"] = (centroid_x, centroid_y)
                 tracked_objects[matched_id]["detected"] = True
 
-            # --- Speed Calculation Trigger ---
             car_data = tracked_objects[matched_id]
 
-            # Check if the object has crossed the bottom speed line AND its speed hasn't been calculated yet
+            # Check if the object has left the trap area AND its speed hasn't been calculated yet
             if (
                 trap_area_x1 <= centroid_x <= trap_area_x2
                 and car_data["speed_kmh"] is None
             ):
                 speed = calculate_speed(car_data, current_frame_number)
                 tracked_objects[matched_id]["speed_kmh"] = speed
-                print(f"Object {matched_id}: {speed}")
 
             # Display ID, Class, and Speed
             display_text = f"ID:{matched_id} ({class_name})"
