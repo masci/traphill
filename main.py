@@ -1,3 +1,5 @@
+import sys
+
 import cv2
 from ultralytics import YOLO  # New import for modern YOLO usage
 
@@ -84,14 +86,13 @@ def main():
 
     except Exception as e:
         print(f"Error loading YOLO model with Ultralytics: {e}")
-        print("Ensure 'ultralytics' is installed (pip install ultralytics).")
-        return
+        return 1
 
     # --- 2. Video Capture Setup ---
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
         print(f"Error: Could not open video file at {VIDEO_PATH}. Check the path.")
-        return
+        return 1
 
     print("Starting video processing with Ultralytics YOLO...")
 
@@ -186,7 +187,10 @@ def main():
             car_data = tracked_objects[matched_id]
 
             # Check if the object has crossed the bottom speed line AND its speed hasn't been calculated yet
-            if centroid_y >= trap_area_x2 and car_data["speed_kph"] is None:
+            if (
+                trap_area_x2 <= centroid_x <= trap_area_x2
+                and car_data["speed_kph"] is None
+            ):
                 speed = calculate_speed(car_data, current_frame_number)
                 tracked_objects[matched_id]["speed_kph"] = speed
 
@@ -250,7 +254,8 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
