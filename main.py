@@ -6,7 +6,7 @@ from ultralytics import YOLO  # New import for modern YOLO usage
 # --- ULTRALYTICS YOLO CONFIGURATION ---
 # YOLOv8n (nano) is highly efficient. This model file is downloaded automatically by Ultralytics.
 YOLO_MODEL = "yolov8n.pt"
-CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence to consider a detection
+CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence to consider a detection
 
 # COCO dataset class IDs for common vehicles:
 # 2: car, 3: motorcycle, 5: bus, 7: truck
@@ -15,12 +15,10 @@ VEHICLE_CLASS_IDS = [2, 3, 5, 7]
 # --- TRACKING & SPEED CONFIGURATION ---
 VIDEO_PATH = "cars_passing.mp4"
 FPS = 30.0
-# IMPORTANT: This factor must be calibrated to your video scene.
-# Example: 0.05 meters per pixel
 PIXELS_TO_METERS_FACTOR = 0.05
 
 # Global tracking data
-# {id: {'center': (x, y), 'start_y': y_coord, 'start_frame': frame_number, 'speed_kph': None, 'detected': True}}
+# {id: {'center': (x, y), 'start_y': y_coord, 'start_frame': frame_number, 'speed_kmh': None, 'detected': True}}
 tracked_objects = {}
 next_object_id = 0
 current_frame_number = 0
@@ -42,12 +40,12 @@ def get_centroid(x, y, w, h):
 
 def calculate_speed(car_data, current_frame):
     """
-    Approximates speed (KPH) based on pixels traveled over frames elapsed.
+    Approximates speed (kmh) based on pixels traveled over frames elapsed.
     The speed is calculated for the segment between SPEED_LINE_Y1 and SPEED_LINE_Y2.
     """
     try:
         # Distance in pixels traveled
-        distance_pixels = car_data["center"][0] - car_data["start_x"]
+        distance_pixels = abs(car_data["center"][0] - car_data["start_x"])
 
         # Frames elapsed between starting line and finishing line
         frames_elapsed = current_frame - car_data["start_frame"]
@@ -62,9 +60,9 @@ def calculate_speed(car_data, current_frame):
         # 2. Real-World Speed (Meters/Second)
         meters_per_second = pixel_speed_per_second * PIXELS_TO_METERS_FACTOR
 
-        # 3. Convert to KPH (Meters/Second * 3.6)
-        kph = meters_per_second * 3.6
-        return round(kph, 1)
+        # 3. Convert to kmh (Meters/Second * 3.6)
+        kmh = meters_per_second * 3.6
+        return round(kmh, 1)
 
     except Exception as e:
         print(f"Error calculating speed: {e}")
@@ -175,7 +173,7 @@ def main():
                     "center": (centroid_x, centroid_y),
                     "start_x": centroid_x,
                     "start_frame": current_frame_number,
-                    "speed_kph": None,
+                    "speed_kmh": None,
                     "detected": True,
                 }
             else:
@@ -188,16 +186,17 @@ def main():
 
             # Check if the object has crossed the bottom speed line AND its speed hasn't been calculated yet
             if (
-                trap_area_x2 <= centroid_x <= trap_area_x2
-                and car_data["speed_kph"] is None
+                trap_area_x1 <= centroid_x <= trap_area_x2
+                and car_data["speed_kmh"] is None
             ):
                 speed = calculate_speed(car_data, current_frame_number)
-                tracked_objects[matched_id]["speed_kph"] = speed
+                tracked_objects[matched_id]["speed_kmh"] = speed
+                print(f"Object {matched_id}: {speed}")
 
             # Display ID, Class, and Speed
             display_text = f"ID:{matched_id} ({class_name})"
-            if car_data["speed_kph"]:
-                display_text += f" | Speed: {car_data['speed_kph']} KPH (Approx)"
+            if car_data["speed_kmh"]:
+                display_text += f" | {car_data['speed_kmh']} Km/h"
 
             cv2.putText(
                 frame,
@@ -209,46 +208,24 @@ def main():
                 2,
             )
 
-        # --- 5. Cleanup ---
         # Remove objects that haven't been seen for a while but have completed their track
         objects_to_remove = [
             obj_id
             for obj_id, data in tracked_objects.items()
-            if not data["detected"] and data["speed_kph"] is not None
+            if not data["detected"] and data["speed_kmh"] is not None
         ]
 
         for obj_id in objects_to_remove:
             del tracked_objects[obj_id]
 
-        # --- 6. Draw the Speed Lines for visual reference ---
-        cv2.line(
-            frame, (trap_area_x1, 0), (trap_area_x1, height), (255, 0, 0), 2
-        )  # Start Line (Blue)
-        cv2.line(
-            frame, (trap_area_x2, 0), (trap_area_x2, height), (0, 0, 255), 2
-        )  # End Line (Red)
-        cv2.putText(
-            frame,
-            "Start Speed Track",
-            (trap_area_x1 + 10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 0, 0),
-            2,
-        )
-        cv2.putText(
-            frame,
-            "End Speed Track",
-            (trap_area_x2 + 10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 255),
-            2,
-        )
+        # Draw the Speed Trap Lines for visual reference
+        cv2.line(frame, (trap_area_x1, 0), (trap_area_x1, height), (255, 0, 0), 2)
+        cv2.line(frame, (trap_area_x2, 0), (trap_area_x2, height), (0, 0, 255), 2)
 
-        # --- 7. Display the result ---
+        # Show the result
         cv2.imshow("YOLO Car Tracker and Speed Estimator (Ultralytics)", frame)
 
+        # Press q to exit
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
