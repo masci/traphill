@@ -8,3 +8,10 @@ dependencies = [
     "ultralytics>=8.3.205",
     "click>=8.1.7",
 ]
+
+[project.scripts]
+traphill = "traphill.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
