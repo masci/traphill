@@ -6,11 +6,9 @@ from ultralytics import YOLO  # New import for modern YOLO usage
 
 # YOLO config
 YOLO_MODEL = "yolov8n.pt"
-CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence to consider a detection
-# 2: car, 3: motorcycle, 5: bus, 7: truck
-VEHICLE_CLASS_IDS = [2, 3, 5, 7]
+VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: car, 3: motorcycle, 5: bus, 7: truck
 
-# Global config
+# Video config
 FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
 
@@ -68,7 +66,7 @@ def calculate_speed(car_data, current_frame):
         return None
 
 
-def main(video_path: str) -> int:
+def main(video_path: str, confidence_treshold: float) -> int:
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
     global next_object_id, current_frame_number, tracked_objects
 
@@ -105,7 +103,7 @@ def main(video_path: str) -> int:
         # Predict on the frame (setting verbose=False suppresses logging for cleaner output)
         results = model.predict(
             source=frame,
-            conf=CONFIDENCE_THRESHOLD,
+            conf=confidence_treshold,
             classes=VEHICLE_CLASS_IDS,
             verbose=False,
         )[0]
@@ -230,13 +228,19 @@ def main(video_path: str) -> int:
     help="Track cars and estimate their speed in a video.",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+@click.option(
+    "confidence_treshold",
+    type=float,
+    default=0.6,
+    help="Minimum confidence to consider a detection",
+)
 @click.argument(
     "video_path",
     type=click.Path(exists=True, dir_okay=False, resolve_path=True),
 )
-def cli(video_path: str):
+def cli(video_path: str, confidence_treshold: float):
     """CLI for the YOLO Car Tracker and Speed Estimator."""
-    return main(video_path)
+    return main(video_path, confidence_treshold)
 
 
 if __name__ == "__main__":
