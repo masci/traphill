@@ -1,4 +1,5 @@
 import sys
+from dataclasses import dataclass
 
 import click
 import cv2
@@ -12,11 +13,25 @@ VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: car, 3: motorcycle, 5: bus, 7: truck
 FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
 
-# Global tracking data
-# {id: {'center': (x, y), 'start_y': y_coord, 'start_frame': frame_number, 'speed_kmh': None, 'detected': True}}
-tracked_objects = {}
-next_object_id = 0
-current_frame_number = 0
+
+@dataclass(kw_only=True)
+class DetectedObject:
+    x: int
+    y: int
+    width: int
+    height: int
+    name: str
+    conf: float
+    centroid: tuple[int, int]
+
+
+@dataclass(kw_only=True)
+class TrackedObject:
+    center: tuple[int, int]
+    start_x: int
+    start_frame: int
+    speed_kmh: int | None = None
+    detected: bool = True
 
 
 def get_trap_boundaries(
@@ -35,17 +50,17 @@ def get_centroid(x: int, y: int, w: int, h: int) -> tuple[int, int]:
     return (x + w // 2, y + h // 2)
 
 
-def calculate_speed(car_data, current_frame):
+def calculate_speed(car_data: TrackedObject, current_frame: int) -> float | None:
     """
     Approximates speed (in Km/h) based on pixels traveled over frames elapsed.
     The speed is calculated for the segment within the trap area.
     """
     try:
         # Distance in pixels traveled
-        distance_pixels = abs(car_data["center"][0] - car_data["start_x"])
+        distance_pixels = abs(car_data.center[0] - car_data.start_x)
 
         # Frames elapsed between starting line and finishing line
-        frames_elapsed = current_frame - car_data["start_frame"]
+        frames_elapsed = current_frame - car_data.start_frame
 
         if frames_elapsed <= 0:
             return None  # Cannot divide by zero or zero movement
@@ -68,13 +83,15 @@ def calculate_speed(car_data, current_frame):
 
 def main(video_path: str, confidence_treshold: float) -> int:
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
-    global next_object_id, current_frame_number, tracked_objects
+    tracked_objects: dict[int, TrackedObject] = {}
+    next_object_id = 0
+    current_frame_number = 0
 
     # Load YOLO Model
     try:
-        # Ultralytics automatically handles model downloading and loading
         model = YOLO(YOLO_MODEL)
-        class_names = model.names  # Get the list of class names from the loaded model
+        # Get the list of class names from the loaded model
+        class_names = model.names
         print(
             f"YOLO Model loaded. Vehicle classes targeted: {[class_names[i] for i in VEHICLE_CLASS_IDS]}"
         )
@@ -88,13 +105,14 @@ def main(video_path: str, confidence_treshold: float) -> int:
     if not cap.isOpened():
         print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
+    trap_area_x1, trap_area_x2 = get_trap_boundaries(cap)
 
     print("Starting video processing with Ultralytics YOLO...")
 
-    trap_area_x1, trap_area_x2 = get_trap_boundaries(cap)
     while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
+        success, frame = cap.read()
+        if not success:
+            print("Failed reading frame from capture, exiting...")
             break
 
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -108,7 +126,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
             verbose=False,
         )[0]
 
-        final_detections = []
+        trapped_objects: list[DetectedObject] = []
 
         # Iterate over bounding boxes and process only the detected vehicles
         for box in results.boxes:
@@ -120,39 +138,40 @@ def main(video_path: str, confidence_treshold: float) -> int:
             h = y2 - y1
             x = x1
             y = y1
-
-            # Filter detections to only those in the speed tracking zone
-            if x + w > trap_area_x1:
-                final_detections.append(
-                    {
-                        "x": x,
-                        "y": y,
-                        "w": w,
-                        "h": h,
-                        "class": class_names.get(cls_id, "Unknown"),
-                        "conf": conf,
-                    }
-                )
-
-        # Mark all existing objects as potentially lost
-        for obj_id in tracked_objects:
-            tracked_objects[obj_id]["detected"] = False
-
-        for det in final_detections:
-            x, y, w, h = det["x"], det["y"], det["w"], det["h"]
-
             centroid_x, centroid_y = get_centroid(x, y, w, h)
 
+            # Filter detections to only those in the speed tracking zone
+            if trap_area_x1 <= centroid_x <= trap_area_x2:
+                t = DetectedObject(
+                    x=x,
+                    y=y,
+                    width=w,
+                    height=h,
+                    name=class_names.get(cls_id, "Unknown"),
+                    conf=conf,
+                    centroid=(centroid_x, centroid_y),
+                )
+                trapped_objects.append(t)
+
+        # Mark all existing tracked objects as potentially lost
+        for obj_id in tracked_objects:
+            tracked_objects[obj_id].detected = False
+
+        # Process the objects detected within the trap area
+        for obj in trapped_objects:
+            centroid_x, centroid_y = obj.centroid
+
             # Draw the bounding box on the original frame
-            class_name = det["class"]
-            color = (0, 255, 255) if class_name == "car" else (255, 165, 0)
-            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            color = (0, 255, 255) if obj.name == "car" else (255, 165, 0)
+            cv2.rectangle(
+                frame, (obj.x, obj.y), (obj.x + obj.width, obj.y + obj.height), color, 2
+            )
 
             # Try to match the current car to an existing tracked object using proximity
             matched_id = -1
-            for obj_id, data in tracked_objects.items():
+            for obj_id, tracked_obj in tracked_objects.items():
                 # Check proximity based on centroid X position
-                if abs(data["center"][0] - centroid_x) < 80:
+                if abs(tracked_obj.center[0] - centroid_x) < 80:
                     matched_id = obj_id
                     break
 
@@ -161,37 +180,32 @@ def main(video_path: str, confidence_treshold: float) -> int:
                 obj_id = next_object_id
                 next_object_id += 1
                 matched_id = obj_id
-                tracked_objects[obj_id] = {
-                    "center": (centroid_x, centroid_y),
-                    "start_x": centroid_x,
-                    "start_frame": current_frame_number,
-                    "speed_kmh": None,
-                    "detected": True,
-                }
+                tracked_objects[obj_id] = TrackedObject(
+                    center=(centroid_x, centroid_y),
+                    start_x=centroid_x,
+                    start_frame=current_frame_number,
+                )
             else:
                 # Existing object updated
-                tracked_objects[matched_id]["center"] = (centroid_x, centroid_y)
-                tracked_objects[matched_id]["detected"] = True
+                tracked_objects[matched_id].center = (centroid_x, centroid_y)
+                tracked_objects[matched_id].detected = True
 
             car_data = tracked_objects[matched_id]
 
-            # Check if the object has left the trap area AND its speed hasn't been calculated yet
-            if (
-                trap_area_x1 <= centroid_x <= trap_area_x2
-                and car_data["speed_kmh"] is None
-            ):
+            # Check if the object has entered the trap area AND its speed hasn't been calculated yet
+            if car_data.speed_kmh is None:
                 speed = calculate_speed(car_data, current_frame_number)
-                tracked_objects[matched_id]["speed_kmh"] = speed
+                tracked_objects[matched_id].speed_kmh = speed
 
             # Display ID, Class, and Speed
-            display_text = f"ID:{matched_id} ({class_name})"
-            if car_data["speed_kmh"]:
-                display_text += f" | {car_data['speed_kmh']} Km/h"
+            display_text = f"ID:{matched_id} ({obj.name})"
+            if car_data.speed_kmh:
+                display_text += f" | {car_data.speed_kmh} Km/h"
 
             cv2.putText(
                 frame,
                 display_text,
-                (x, y - 10),
+                (obj.x, obj.y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (255, 255, 255),
@@ -202,7 +216,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
         objects_to_remove = [
             obj_id
             for obj_id, data in tracked_objects.items()
-            if not data["detected"] and data["speed_kmh"] is not None
+            if not data.detected and data.speed_kmh is not None
         ]
 
         for obj_id in objects_to_remove:
@@ -229,7 +243,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 @click.option(
-    "confidence_treshold",
+    "--confidence-treshold",
     type=float,
     default=0.6,
     help="Minimum confidence to consider a detection",
