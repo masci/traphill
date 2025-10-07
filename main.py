@@ -1,5 +1,6 @@
 import sys
 
+import click
 import cv2
 from ultralytics import YOLO  # New import for modern YOLO usage
 
@@ -10,7 +11,6 @@ CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence to consider a detection
 VEHICLE_CLASS_IDS = [2, 3, 5, 7]
 
 # Global config
-VIDEO_PATH = "cars_passing.mp4"
 FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
 
@@ -21,7 +21,9 @@ next_object_id = 0
 current_frame_number = 0
 
 
-def get_trap_boundaries(vcap, area_percentage: int = 75) -> tuple[int, int]:
+def get_trap_boundaries(
+    vcap: cv2.VideoCapture, area_percentage: int = 75
+) -> tuple[int, int]:
     """Given the size of the video, return the (X1, X2) coordinates of the trap area"""
     width = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     # get trap area width
@@ -30,15 +32,15 @@ def get_trap_boundaries(vcap, area_percentage: int = 75) -> tuple[int, int]:
     return border, width - border
 
 
-def get_centroid(x, y, w, h):
+def get_centroid(x: int, y: int, w: int, h: int) -> tuple[int, int]:
     """Calculates the center point (centroid) of the bounding box."""
     return (x + w // 2, y + h // 2)
 
 
 def calculate_speed(car_data, current_frame):
     """
-    Approximates speed (kmh) based on pixels traveled over frames elapsed.
-    The speed is calculated for the segment between SPEED_LINE_Y1 and SPEED_LINE_Y2.
+    Approximates speed (in Km/h) based on pixels traveled over frames elapsed.
+    The speed is calculated for the segment within the trap area.
     """
     try:
         # Distance in pixels traveled
@@ -66,7 +68,7 @@ def calculate_speed(car_data, current_frame):
         return None
 
 
-def main():
+def main(video_path: str) -> int:
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
     global next_object_id, current_frame_number, tracked_objects
 
@@ -84,9 +86,9 @@ def main():
         return 1
 
     # Video Capture Setup
-    cap = cv2.VideoCapture(VIDEO_PATH)
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print(f"Error: Could not open video file at {VIDEO_PATH}. Check the path.")
+        print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
 
     print("Starting video processing with Ultralytics YOLO...")
@@ -224,5 +226,18 @@ def main():
     return 0
 
 
+@click.command(
+    help="Track cars and estimate their speed in a video.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+@click.argument(
+    "video_path",
+    type=click.Path(exists=True, dir_okay=False, resolve_path=True),
+)
+def cli(video_path: str):
+    """CLI for the YOLO Car Tracker and Speed Estimator."""
+    return main(video_path)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli())
