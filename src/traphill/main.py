@@ -2,6 +2,7 @@ import sys
 
 import click
 import cv2
+from cv2.typing import MatLike
 from ultralytics import YOLO  # New import for modern YOLO usage
 
 from .types import DetectedObject, TrackedObject, TrapArea
@@ -15,11 +16,10 @@ FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
 
 
-def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 75) -> TrapArea:
-    """Given the size of the video, return the (X1, X2) coordinates of the trap area"""
+def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 40) -> TrapArea:
+    """Given the size of the video, return the trap area"""
     width = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    # get trap area width
     trap_width = int(width / 100 * area_percentage)
     border = (width - trap_width) // 2
     return TrapArea(border, width - border, height)
@@ -61,6 +61,47 @@ def calculate_speed(car_data: TrackedObject, current_frame: int) -> float | None
         return None
 
 
+def detect_objects(
+    model: YOLO,
+    frame: MatLike,
+    confidence_treshold: float,
+    trap_area: TrapArea,
+) -> list[DetectedObject]:
+    """Detect objects and return those within the trap area."""
+    retval: list[DetectedObject] = []
+    results = model.predict(
+        source=frame,
+        conf=confidence_treshold,
+        classes=VEHICLE_CLASS_IDS,
+        verbose=False,  # suppress logging for cleaner output
+    )[0]
+
+    for box in results.boxes:
+        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+        conf = round(box.conf[0].item(), 2)
+        cls_id = int(box.cls[0].item())
+
+        w = x2 - x1
+        h = y2 - y1
+        x = x1
+        y = y1
+        centroid_x, centroid_y = get_centroid(x, y, w, h)
+
+        # Filter detections to only those in the speed tracking zone
+        if trap_area.x1 <= centroid_x <= trap_area.x2:
+            t = DetectedObject(
+                x=x,
+                y=y,
+                width=w,
+                height=h,
+                name=model.names.get(cls_id, "Unknown"),
+                conf=conf,
+                centroid=(centroid_x, centroid_y),
+            )
+            retval.append(t)
+    return retval
+
+
 def main(video_path: str, confidence_treshold: float) -> int:
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
     tracked_objects: dict[int, TrackedObject] = {}
@@ -71,9 +112,8 @@ def main(video_path: str, confidence_treshold: float) -> int:
     try:
         model = YOLO(YOLO_MODEL)
         # Get the list of class names from the loaded model
-        class_names = model.names
         print(
-            f"YOLO Model loaded. Vehicle classes targeted: {[class_names[i] for i in VEHICLE_CLASS_IDS]}"
+            f"YOLO Model loaded. Vehicle classes targeted: {[model.names[i] for i in VEHICLE_CLASS_IDS]}"
         )
 
     except Exception as e:
@@ -96,41 +136,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
             break
 
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-
-        # Predict on the frame (setting verbose=False suppresses logging for cleaner output)
-        results = model.predict(
-            source=frame,
-            conf=confidence_treshold,
-            classes=VEHICLE_CLASS_IDS,
-            verbose=False,
-        )[0]
-
-        trapped_objects: list[DetectedObject] = []
-
-        # Iterate over bounding boxes and process only the detected vehicles
-        for box in results.boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            conf = round(box.conf[0].item(), 2)
-            cls_id = int(box.cls[0].item())
-
-            w = x2 - x1
-            h = y2 - y1
-            x = x1
-            y = y1
-            centroid_x, centroid_y = get_centroid(x, y, w, h)
-
-            # Filter detections to only those in the speed tracking zone
-            if trap_area.x1 <= centroid_x <= trap_area.x2:
-                t = DetectedObject(
-                    x=x,
-                    y=y,
-                    width=w,
-                    height=h,
-                    name=class_names.get(cls_id, "Unknown"),
-                    conf=conf,
-                    centroid=(centroid_x, centroid_y),
-                )
-                trapped_objects.append(t)
+        trapped_objects = detect_objects(model, frame, confidence_treshold, trap_area)
 
         # Mark all existing tracked objects as potentially lost
         for obj_id in tracked_objects:
