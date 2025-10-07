@@ -1,9 +1,10 @@
 import sys
-from dataclasses import dataclass
 
 import click
 import cv2
 from ultralytics import YOLO  # New import for modern YOLO usage
+
+from .types import DetectedObject, TrackedObject, TrapArea
 
 # YOLO config
 YOLO_MODEL = "yolov8n.pt"
@@ -12,33 +13,6 @@ VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: car, 3: motorcycle, 5: bus, 7: truck
 # Video config
 FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
-
-
-@dataclass(kw_only=True)
-class DetectedObject:
-    x: int
-    y: int
-    width: int
-    height: int
-    name: str
-    conf: float
-    centroid: tuple[int, int]
-
-
-@dataclass(kw_only=True)
-class TrackedObject:
-    center: tuple[int, int]
-    start_x: int
-    start_frame: int
-    speed_kmh: float | None = None
-    detected: bool = True
-
-
-@dataclass
-class TrapArea:
-    x1: int
-    x2: int
-    height: int
 
 
 def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 75) -> TrapArea:
