@@ -34,15 +34,21 @@ class TrackedObject:
     detected: bool = True
 
 
-def get_trap_boundaries(
-    vcap: cv2.VideoCapture, area_percentage: int = 75
-) -> tuple[int, int]:
+@dataclass
+class TrapArea:
+    x1: int
+    x2: int
+    height: int
+
+
+def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 75) -> TrapArea:
     """Given the size of the video, return the (X1, X2) coordinates of the trap area"""
     width = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     # get trap area width
     trap_width = int(width / 100 * area_percentage)
     border = (width - trap_width) // 2
-    return border, width - border
+    return TrapArea(border, width - border, height)
 
 
 def get_centroid(x: int, y: int, w: int, h: int) -> tuple[int, int]:
@@ -105,7 +111,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
     if not cap.isOpened():
         print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
-    trap_area_x1, trap_area_x2 = get_trap_boundaries(cap)
+    trap_area = get_trap_area(cap)
 
     print("Starting video processing with Ultralytics YOLO...")
 
@@ -116,7 +122,6 @@ def main(video_path: str, confidence_treshold: float) -> int:
             break
 
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-        height, width, _ = frame.shape
 
         # Predict on the frame (setting verbose=False suppresses logging for cleaner output)
         results = model.predict(
@@ -141,7 +146,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
             centroid_x, centroid_y = get_centroid(x, y, w, h)
 
             # Filter detections to only those in the speed tracking zone
-            if trap_area_x1 <= centroid_x <= trap_area_x2:
+            if trap_area.x1 <= centroid_x <= trap_area.x2:
                 t = DetectedObject(
                     x=x,
                     y=y,
@@ -171,7 +176,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
             matched_id = -1
             for obj_id, tracked_obj in tracked_objects.items():
                 # Check proximity based on centroid X position
-                if abs(tracked_obj.center[0] - centroid_x) < 80:
+                if abs(tracked_obj.center[0] - centroid_x) < 100:
                     matched_id = obj_id
                     break
 
@@ -223,8 +228,12 @@ def main(video_path: str, confidence_treshold: float) -> int:
             del tracked_objects[obj_id]
 
         # Draw the Speed Trap Lines for visual reference
-        cv2.line(frame, (trap_area_x1, 0), (trap_area_x1, height), (255, 0, 0), 2)
-        cv2.line(frame, (trap_area_x2, 0), (trap_area_x2, height), (0, 0, 255), 2)
+        cv2.line(
+            frame, (trap_area.x1, 0), (trap_area.x1, trap_area.height), (255, 0, 0), 2
+        )
+        cv2.line(
+            frame, (trap_area.x2, 0), (trap_area.x2, trap_area.height), (0, 0, 255), 2
+        )
 
         # Show the result
         cv2.imshow("YOLO Car Tracker and Speed Estimator (Ultralytics)", frame)
