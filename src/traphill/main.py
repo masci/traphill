@@ -254,8 +254,4 @@ def main(video_path: str, confidence_treshold: float) -> int:
 )
 def cli(video_path: str, confidence_treshold: float):
     """CLI for the YOLO Car Tracker and Speed Estimator."""
-    return main(video_path, confidence_treshold)
-
-
-if __name__ == "__main__":
-    sys.exit(cli())
+    sys.exit(main(video_path, confidence_treshold))
