@@ -2,8 +2,10 @@ import sys
 
 import click
 import cv2
+import numpy as np
 from cv2.typing import MatLike
-from ultralytics import YOLO  # New import for modern YOLO usage
+from scipy.optimize import linear_sum_assignment
+from ultralytics import YOLO
 
 from .types import DetectedObject, TrackedObject, TrapArea
 
@@ -23,11 +25,6 @@ def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 40) -> TrapArea
     trap_width = int(width / 100 * area_percentage)
     border = (width - trap_width) // 2
     return TrapArea(border, width - border, height)
-
-
-def get_centroid(x: int, y: int, w: int, h: int) -> tuple[int, int]:
-    """Calculates the center point (centroid) of the bounding box."""
-    return (x + w // 2, y + h // 2)
 
 
 def calculate_speed(car_data: TrackedObject, current_frame: int) -> float | None:
@@ -80,25 +77,19 @@ def detect_objects(
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         conf = round(box.conf[0].item(), 2)
         cls_id = int(box.cls[0].item())
+        dt = DetectedObject(
+            x=x1,
+            y=y1,
+            width=x2 - x1,
+            height=y2 - y1,
+            name=model.names.get(cls_id, "Unknown"),
+            conf=conf,
+        )
+        centroid_x, _ = dt.centroid
 
-        w = x2 - x1
-        h = y2 - y1
-        x = x1
-        y = y1
-        centroid_x, centroid_y = get_centroid(x, y, w, h)
-
-        # Filter detections to only those in the speed tracking zone
+        # Filter detections to only include those within the speed tracking zone
         if trap_area.x1 <= centroid_x <= trap_area.x2:
-            t = DetectedObject(
-                x=x,
-                y=y,
-                width=w,
-                height=h,
-                name=model.names.get(cls_id, "Unknown"),
-                conf=conf,
-                centroid=(centroid_x, centroid_y),
-            )
-            retval.append(t)
+            retval.append(dt)
     return retval
 
 
@@ -136,72 +127,129 @@ def main(video_path: str, confidence_treshold: float) -> int:
             break
 
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-        trapped_objects = detect_objects(model, frame, confidence_treshold, trap_area)
+        detected_objects = detect_objects(model, frame, confidence_treshold, trap_area)
 
         # Mark all existing tracked objects as potentially lost
         for obj_id in tracked_objects:
             tracked_objects[obj_id].detected = False
 
-        # Process the objects detected within the trap area
-        for obj in trapped_objects:
-            centroid_x, centroid_y = obj.centroid
-
-            # Draw the bounding box on the original frame
-            color = (0, 255, 255) if obj.name == "car" else (255, 165, 0)
-            cv2.rectangle(
-                frame, (obj.x, obj.y), (obj.x + obj.width, obj.y + obj.height), color, 2
+        # If there are no detections, there's nothing to do
+        if len(detected_objects) == 0:
+            # TODO: maybe we can draw the old cars here
+            pass
+        # If there are no tracked objects, all detections are new
+        elif len(tracked_objects) == 0:
+            for obj in detected_objects:
+                tracked_objects[next_object_id] = TrackedObject(
+                    center=obj.centroid,
+                    start_x=obj.centroid[0],
+                    start_frame=current_frame_number,
+                    last_seen_frame=current_frame_number,
+                )
+                next_object_id += 1
+        else:
+            # Prepare cost matrix for assignment problem
+            #
+            # Rows: existing tracked objects
+            # Columns: new detected objects
+            # Value: Euclidean distance
+            tracked_ids = list(tracked_objects.keys())
+            cost_matrix = np.zeros(
+                (len(tracked_ids), len(detected_objects)), dtype=np.float32
             )
 
-            # Try to match the current car to an existing tracked object using proximity
-            matched_id = -1
-            for obj_id, tracked_obj in tracked_objects.items():
-                # Check proximity based on centroid X position
-                if abs(tracked_obj.center[0] - centroid_x) < 100:
-                    matched_id = obj_id
+            for i, obj_id in enumerate(tracked_ids):
+                for j, det_obj in enumerate(detected_objects):
+                    dist = np.linalg.norm(
+                        np.array(tracked_objects[obj_id].center)
+                        - np.array(det_obj.centroid)
+                    )
+                    cost_matrix[i, j] = dist
+
+            # Solve the assignment problem
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+            # Process assignments
+            for r, c in zip(row_ind, col_ind):
+                obj_id = tracked_ids[r]
+                det_obj = detected_objects[c]
+
+                # Check if the match is good enough (e.g., distance threshold)
+                if cost_matrix[r, c] < 100:
+                    tracked_objects[obj_id].center = det_obj.centroid
+                    tracked_objects[obj_id].detected = True
+                    tracked_objects[obj_id].last_seen_frame = current_frame_number
+
+            # New objects are those that were not assigned
+            assigned_det_indices = set(col_ind)
+            for i, det_obj in enumerate(detected_objects):
+                if i not in assigned_det_indices:
+                    tracked_objects[next_object_id] = TrackedObject(
+                        center=det_obj.centroid,
+                        start_x=det_obj.centroid[0],
+                        start_frame=current_frame_number,
+                        last_seen_frame=current_frame_number,
+                    )
+                    next_object_id += 1
+
+        # Draw tracked objects
+        for obj_id, data in tracked_objects.items():
+            if not data.detected:
+                continue
+
+            # Find the detected object that corresponds to this tracked object
+            # This is not the most efficient way, but it's simple
+            det_obj = None
+            for do in detected_objects:
+                if data.center == do.centroid:
+                    det_obj = do
                     break
 
-            if matched_id == -1:
-                # New object detected: Record starting point for speed calculation
-                obj_id = next_object_id
-                next_object_id += 1
-                matched_id = obj_id
-                tracked_objects[obj_id] = TrackedObject(
-                    center=(centroid_x, centroid_y),
-                    start_x=centroid_x,
-                    start_frame=current_frame_number,
-                )
-            else:
-                # Existing object updated
-                tracked_objects[matched_id].center = (centroid_x, centroid_y)
-                tracked_objects[matched_id].detected = True
+            if det_obj is None:
+                # This can happen if the object was matched but its center
+                # was updated in the same frame. We should improve this.
+                continue
 
-            car_data = tracked_objects[matched_id]
+            # Draw the bounding box on the original frame
+            color = (0, 255, 255) if det_obj.name == "car" else (255, 165, 0)
+            cv2.rectangle(
+                frame,
+                (det_obj.x, det_obj.y),
+                (det_obj.x + det_obj.width, det_obj.y + det_obj.height),
+                color,
+                2,
+            )
 
-            # Check if the object has entered the trap area AND its speed hasn't been calculated yet
-            if car_data.speed_kmh is None:
-                speed = calculate_speed(car_data, current_frame_number)
-                tracked_objects[matched_id].speed_kmh = speed
+            # Check if the object's speed hasn't been calculated yet
+            if data.speed_kmh is None:
+                speed = calculate_speed(data, current_frame_number)
+                if speed is not None:
+                    tracked_objects[obj_id].speed_kmh = speed
 
             # Display ID, Class, and Speed
-            display_text = f"ID:{matched_id} ({obj.name})"
-            if car_data.speed_kmh:
-                display_text += f" | {car_data.speed_kmh} Km/h"
+            display_text = f"ID:{obj_id} ({det_obj.name})"
+            if data.speed_kmh:
+                display_text += f" | {data.speed_kmh} Km/h"
 
             cv2.putText(
                 frame,
                 display_text,
-                (obj.x, obj.y - 10),
+                (det_obj.x, det_obj.y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (255, 255, 255),
                 2,
             )
 
-        # Remove objects that haven't been seen for a while but have completed their track
+        # Remove objects that haven't been seen for a while
+        #
+        # This is a simple approach. A more robust solution would be to
+        # keep the object for a bit longer, in case it reappears.
         objects_to_remove = [
             obj_id
             for obj_id, data in tracked_objects.items()
-            if not data.detected and data.speed_kmh is not None
+            if not data.detected
+            and (current_frame_number - data.last_seen_frame) > FPS / 2
         ]
 
         for obj_id in objects_to_remove:
