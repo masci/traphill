@@ -30,7 +30,7 @@ class TrackedObject:
     center: tuple[int, int]
     start_x: int
     start_frame: int
-    speed_kmh: int | None = None
+    speed_kmh: float | None = None
     detected: bool = True
 
 
