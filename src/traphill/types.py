@@ -22,16 +22,6 @@ class Detection:
         return float(d)
 
 
-@dataclass(kw_only=True)
-class TrackedObject:
-    center: tuple[int, int]
-    start_x: int
-    start_frame: int
-    last_seen_frame: int
-    speed_kmh: float | None = None
-    detected: bool = True
-
-
 class Car:
     def __init__(self, detection: Detection, frame_number: int) -> None:
         self._detection = detection
