@@ -14,7 +14,6 @@ YOLO_MODEL = "yolov8n.pt"
 VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: car, 3: motorcycle, 5: bus, 7: truck
 
 # Video config
-FPS = 30.0
 PIXELS_TO_METERS_FACTOR = 0.05
 
 
@@ -27,7 +26,9 @@ def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 40) -> TrapArea
     return TrapArea(border, width - border, height)
 
 
-def calculate_speed(car_data: TrackedObject, current_frame: int) -> float | None:
+def calculate_speed(
+    car_data: TrackedObject, current_frame: int, fps: float
+) -> float | None:
     """
     Approximates speed (in Km/h) based on pixels traveled over frames elapsed.
     The speed is calculated for the segment within the trap area.
@@ -43,7 +44,7 @@ def calculate_speed(car_data: TrackedObject, current_frame: int) -> float | None
             return None  # Cannot divide by zero or zero movement
 
         # 1. Pixel Speed: distance in pixels / time in seconds
-        time_seconds = frames_elapsed / FPS
+        time_seconds = frames_elapsed / fps
         pixel_speed_per_second = distance_pixels / time_seconds
 
         # 2. Real-World Speed (Meters/Second)
@@ -117,9 +118,11 @@ def main(video_path: str, confidence_treshold: float) -> int:
         print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
     trap_area = get_trap_area(cap)
+    fps = cap.get(cv2.CAP_PROP_FPS)
 
     print("Starting video processing with Ultralytics YOLO...")
 
+    # Process frames
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
@@ -135,7 +138,8 @@ def main(video_path: str, confidence_treshold: float) -> int:
 
         # If there are no detections, there's nothing to do
         if len(detected_objects) == 0:
-            # TODO: maybe we can draw the old cars here
+            # TODO: if we want to start/stop recording when there's no traffic,
+            # we could change state here
             pass
         # If there are no tracked objects, all detections are new
         elif len(tracked_objects) == 0:
@@ -200,9 +204,9 @@ def main(video_path: str, confidence_treshold: float) -> int:
             # Find the detected object that corresponds to this tracked object
             # This is not the most efficient way, but it's simple
             det_obj = None
-            for do in detected_objects:
-                if data.center == do.centroid:
-                    det_obj = do
+            for obj in detected_objects:
+                if data.center == obj.centroid:
+                    det_obj = obj
                     break
 
             if det_obj is None:
@@ -220,11 +224,9 @@ def main(video_path: str, confidence_treshold: float) -> int:
                 2,
             )
 
-            # Check if the object's speed hasn't been calculated yet
-            if data.speed_kmh is None:
-                speed = calculate_speed(data, current_frame_number)
-                if speed is not None:
-                    tracked_objects[obj_id].speed_kmh = speed
+            speed = calculate_speed(data, current_frame_number, fps)
+            if speed is not None:
+                tracked_objects[obj_id].speed_kmh = speed
 
             # Display ID, Class, and Speed
             display_text = f"ID:{obj_id} ({det_obj.name})"
@@ -249,7 +251,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
             obj_id
             for obj_id, data in tracked_objects.items()
             if not data.detected
-            and (current_frame_number - data.last_seen_frame) > FPS / 2
+            and (current_frame_number - data.last_seen_frame) > fps / 2
         ]
 
         for obj_id in objects_to_remove:
