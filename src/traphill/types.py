@@ -5,6 +5,8 @@ import numpy as np
 
 @dataclass(kw_only=True)
 class Detection:
+    """A class representing a detected object with its bounding box."""
+
     x: int
     y: int
     width: int
@@ -22,7 +24,9 @@ class Detection:
         return float(d)
 
 
-class Car:
+class Vehicle:
+    """A class representing a tracked vehicle."""
+
     def __init__(self, detection: Detection, frame_number: int) -> None:
         self._detection = detection
         self._first_seen_detection = detection

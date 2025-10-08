@@ -7,11 +7,11 @@ from cv2.typing import MatLike
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
-from .types import Car, Detection, TrapArea
+from .types import Detection, TrapArea, Vehicle
 
 # YOLO config
 YOLO_MODEL = "yolov8n.pt"
-VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: car, 3: motorcycle, 5: bus, 7: truck
+VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: vehicle, 3: motorcycle, 5: bus, 7: truck
 
 # Video config
 PIXELS_TO_METERS_FACTOR = 0.05
@@ -26,14 +26,14 @@ def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 40) -> TrapArea
     return TrapArea(border, width - border, height)
 
 
-def calculate_speed(car: Car, current_frame: int, fps: float) -> float | None:
+def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float | None:
     """
     Approximates speed (in Km/h) based on pixels traveled over frames elapsed.
     The speed is calculated for the segment within the trap area.
     """
     try:
-        distance_pixels = car.travelled_distance()
-        frames_elapsed = car.frames_elapsed(current_frame)
+        distance_pixels = vehicle.travelled_distance()
+        frames_elapsed = vehicle.frames_elapsed(current_frame)
         if frames_elapsed <= 0:
             return None  # Cannot divide by zero or zero movement
 
@@ -90,8 +90,8 @@ def detect_objects(
 
 def main(video_path: str, confidence_treshold: float) -> int:
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
-    tracked_cars: dict[int, Car] = {}
-    next_car_id = 0
+    tracked_vehicles: dict[int, Vehicle] = {}
+    next_id = 0
     current_frame_number = 0
 
     # Load YOLO Model
@@ -129,8 +129,8 @@ def main(video_path: str, confidence_treshold: float) -> int:
         )
 
         # Mark all existing tracked objects as potentially lost
-        for car_id in tracked_cars:
-            tracked_cars[car_id]._detected = False
+        for vehicle_id in tracked_vehicles:
+            tracked_vehicles[vehicle_id]._detected = False
 
         # If there are no detections, there's nothing to do
         if len(detected_objects) == 0:
@@ -138,79 +138,83 @@ def main(video_path: str, confidence_treshold: float) -> int:
             # we could change state here
             pass
         # If there are no tracked objects, all detections are new
-        elif len(tracked_cars) == 0:
+        elif len(tracked_vehicles) == 0:
             for obj in detected_objects:
-                tracked_cars[next_car_id] = Car(
+                tracked_vehicles[next_id] = Vehicle(
                     detection=obj, frame_number=current_frame_number
                 )
-                next_car_id += 1
+                next_id += 1
         else:
             # Prepare cost matrix for assignment problem
             #
             # Rows: existing tracked objects
             # Columns: new detected objects
             # Value: Euclidean distance
-            car_ids = list(tracked_cars.keys())
+            vehicle_ids = list(tracked_vehicles.keys())
             cost_matrix = np.zeros(
-                (len(car_ids), len(detected_objects)), dtype=np.float32
+                (len(vehicle_ids), len(detected_objects)), dtype=np.float32
             )
 
-            for i, car_id in enumerate(car_ids):
+            for i, vehicle_id in enumerate(vehicle_ids):
                 for j, det_obj in enumerate(detected_objects):
-                    cost_matrix[i, j] = det_obj.distance(tracked_cars[car_id].detection)
+                    cost_matrix[i, j] = det_obj.distance(
+                        tracked_vehicles[vehicle_id].detection
+                    )
 
             # Solve the assignment problem
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
             # Process assignments
             for r, c in zip(row_ind, col_ind):
-                car_id = car_ids[r]
+                vehicle_id = vehicle_ids[r]
                 det_obj = detected_objects[c]
 
                 # Check if the match is good enough (e.g., distance threshold)
                 if cost_matrix[r, c] < 100:
-                    tracked_cars[car_id].update(det_obj, current_frame_number)
+                    tracked_vehicles[vehicle_id].update(det_obj, current_frame_number)
 
             # New objects are those that were not assigned
             assigned_det_indices = set(col_ind)
             for i, det_obj in enumerate(detected_objects):
                 if i not in assigned_det_indices:
-                    tracked_cars[next_car_id] = Car(
+                    tracked_vehicles[next_id] = Vehicle(
                         detection=det_obj, frame_number=current_frame_number
                     )
-                    next_car_id += 1
+                    next_id += 1
 
         # Draw tracked objects
-        for car_id, car in tracked_cars.items():
-            if not car.detected:
+        for vehicle_id, vehicle in tracked_vehicles.items():
+            if not vehicle.detected:
                 continue
 
             # Draw the bounding box on the original frame
-            color = (0, 255, 255) if car.detection.name == "car" else (255, 165, 0)
+            color = (
+                (0, 255, 255) if vehicle.detection.name == "vehicle" else (255, 165, 0)
+            )
             cv2.rectangle(
                 frame,
-                (car.detection.x, car.detection.y),
+                (vehicle.detection.x, vehicle.detection.y),
                 (
-                    car.detection.x + car.detection.width,
-                    car.detection.y + car.detection.height,
+                    vehicle.detection.x + vehicle.detection.width,
+                    vehicle.detection.y + vehicle.detection.height,
                 ),
                 color,
                 2,
             )
 
-            speed = calculate_speed(car, current_frame_number, fps)
+            speed = calculate_speed(vehicle, current_frame_number, fps)
             if speed is not None:
-                tracked_cars[car_id]._speed = speed
+                tracked_vehicles[vehicle_id]._speed = speed
 
             # Display ID, Class, and Speed
-            display_text = f"ID:{car_id} ({car.detection.name})"
-            if car._speed:
-                display_text += f" | {car._speed} Km/h"
+            display_text = f"ID:{vehicle_id} ({vehicle.detection.name})"
+            if vehicle._speed:
+                display_text += f" | {vehicle._speed} Km/h"
 
             cv2.putText(
                 frame,
                 display_text,
-                (car.detection.x, car.detection.y - 10),
+                (vehicle.detection.x, vehicle.detection.y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (255, 255, 255),
@@ -222,13 +226,14 @@ def main(video_path: str, confidence_treshold: float) -> int:
         # This is a simple approach. A more robust solution would be to
         # keep the object for a bit longer, in case it reappears.
         objects_to_remove = [
-            car_id
-            for car_id, car in tracked_cars.items()
-            if not car.detected and car.frames_elapsed(current_frame_number) > fps / 2
+            vehicle_id
+            for vehicle_id, vehicle in tracked_vehicles.items()
+            if not vehicle.detected
+            and vehicle.frames_elapsed(current_frame_number) > fps / 2
         ]
 
-        for car_id in objects_to_remove:
-            del tracked_cars[car_id]
+        for vehicle_id in objects_to_remove:
+            del tracked_vehicles[vehicle_id]
 
         # Draw the Speed Trap Lines for visual reference
         cv2.line(
@@ -239,7 +244,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
         )
 
         # Show the result
-        cv2.imshow("YOLO Car Tracker and Speed Estimator (Ultralytics)", frame)
+        cv2.imshow("YOLO Vehicle Tracker and Speed Estimator (Ultralytics)", frame)
 
         # Press q to exit
         if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -251,7 +256,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
 
 
 @click.command(
-    help="Track cars and estimate their speed in a video.",
+    help="Track vehicles and estimate their speed in a video.",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 @click.option(
@@ -265,5 +270,5 @@ def main(video_path: str, confidence_treshold: float) -> int:
     type=click.Path(exists=True, dir_okay=False, resolve_path=True),
 )
 def cli(video_path: str, confidence_treshold: float):
-    """CLI for the YOLO Car Tracker and Speed Estimator."""
+    """CLI for the YOLO Vehicle Tracker and Speed Estimator."""
     sys.exit(main(video_path, confidence_treshold))
