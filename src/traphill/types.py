@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
 
+import numpy as np
+
 
 @dataclass(kw_only=True)
-class DetectedObject:
+class Detection:
     x: int
     y: int
     width: int
@@ -15,6 +17,10 @@ class DetectedObject:
         """Calculates the center point (centroid) of the bounding box."""
         self.centroid = (self.x + self.width // 2, self.y + self.height // 2)
 
+    def distance(self, other: "Detection") -> float:
+        d = np.linalg.norm(np.array(self.centroid) - np.array(other.centroid))
+        return float(d)
+
 
 @dataclass(kw_only=True)
 class TrackedObject:
@@ -24,6 +30,35 @@ class TrackedObject:
     last_seen_frame: int
     speed_kmh: float | None = None
     detected: bool = True
+
+
+class Car:
+    def __init__(self, detection: Detection, frame_number: int) -> None:
+        self._detection = detection
+        self._first_seen_detection = detection
+        self._first_seen_frame_number = frame_number
+        self._last_seen_frame_number = frame_number
+        self._speed: float | None = None
+        self._detected: bool = True
+
+    def update(self, d: Detection, frame_number: int) -> None:
+        self._last_seen_frame_number = frame_number
+        self._detection = d
+        self._detected = True
+
+    def travelled_distance(self) -> float:
+        return self._detection.distance(self._first_seen_detection)
+
+    def frames_elapsed(self, current_frame: int) -> int:
+        return current_frame - self._first_seen_frame_number
+
+    @property
+    def detected(self) -> bool:
+        return self._detected
+
+    @property
+    def detection(self) -> Detection:
+        return self._detection
 
 
 @dataclass
