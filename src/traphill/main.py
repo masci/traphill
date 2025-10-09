@@ -44,7 +44,7 @@ def match_detections(
     detected_objects: list[Detection],
     next_id: int,
     current_frame_number: int,
-) -> None:
+) -> int:
     """Prepare cost matrix for assignment problem.
 
     Rows: existing tracked objects
@@ -67,7 +67,7 @@ def match_detections(
         det_obj = detected_objects[c]
 
         # Check if the match is good enough (e.g., distance threshold)
-        if cost_matrix[r, c] < 10:
+        if cost_matrix[r, c] < 50:
             tracked_vehicles[vehicle_id].update(det_obj, current_frame_number)
 
     # New objects are those that were not assigned
@@ -78,6 +78,8 @@ def match_detections(
                 detection=det_obj, frame_number=current_frame_number
             )
             next_id += 1
+
+    return next_id
 
 
 def draw_tracked_objects(
@@ -191,7 +193,7 @@ def main(
                 next_id += 1
         # Try to match detected objects to tracked objects
         else:
-            match_detections(
+            next_id = match_detections(
                 tracked_vehicles, detected_objects, next_id, current_frame_number
             )
 
