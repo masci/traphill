@@ -50,6 +50,10 @@ class Vehicle:
     def detected(self) -> bool:
         return self._detected
 
+    @detected.setter
+    def detected(self, d: bool) -> None:
+        self._detected = d
+
     @property
     def detection(self) -> Detection:
         return self._detection

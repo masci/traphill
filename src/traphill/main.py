@@ -175,7 +175,7 @@ def main(
 
         # Mark all existing tracked objects as potentially lost
         for vehicle_id in tracked_vehicles:
-            tracked_vehicles[vehicle_id]._detected = False
+            tracked_vehicles[vehicle_id].detected = False
 
         # If there are no detections, there's nothing to do
         if len(detected_objects) == 0:
