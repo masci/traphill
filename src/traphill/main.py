@@ -6,15 +6,9 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
+from .config import PIXELS_TO_METERS_FACTOR, VEHICLE_CLASS_IDS, YOLO_MODEL
 from .detection import detect_objects, get_trap_area
 from .types import Detection, Vehicle
-
-# YOLO config
-YOLO_MODEL = "yolov8n.pt"
-VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: vehicle, 3: motorcycle, 5: bus, 7: truck
-
-# Video config
-PIXELS_TO_METERS_FACTOR = 0.05
 
 
 def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float | None:
@@ -44,7 +38,9 @@ def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float |
         return None
 
 
-def main(video_path: str, confidence_treshold: float) -> int:
+def main(
+    video_path: str, confidence_treshold: float, trap_begin: int, trap_end: int | None
+) -> int:
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
     tracked_vehicles: dict[int, Vehicle] = {}
     next_id = 0
@@ -67,7 +63,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
     if not cap.isOpened():
         print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
-    trap_area = get_trap_area(cap)
+    trap_area = get_trap_area(cap, trap_begin, trap_end)
     fps = cap.get(cv2.CAP_PROP_FPS)
 
     print("Starting video processing...")
@@ -219,10 +215,24 @@ def main(video_path: str, confidence_treshold: float) -> int:
     default=0.6,
     help="Minimum confidence to consider a detection",
 )
+@click.option(
+    "--trap-begin",
+    type=int,
+    default=0,
+    help="X coordinate in pixels of the left bound of the trap area",
+)
+@click.option(
+    "--trap-end",
+    type=int,
+    default=None,
+    help="X coordinate in pixels of the right bound of the trap area",
+)
 @click.argument(
     "video_path",
     type=click.Path(exists=True, dir_okay=False, resolve_path=True),
 )
-def cli(video_path: str, confidence_treshold: float):
+def cli(
+    video_path: str, confidence_treshold: float, trap_begin: int, trap_end: int | None
+):
     """CLI for the YOLO Vehicle Tracker and Speed Estimator."""
-    sys.exit(main(video_path, confidence_treshold))
+    sys.exit(main(video_path, confidence_treshold, trap_begin, trap_end))
