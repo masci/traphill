@@ -122,7 +122,7 @@ def main(
                 det_obj = detected_objects[c]
 
                 # Check if the match is good enough (e.g., distance threshold)
-                if cost_matrix[r, c] < 100:
+                if cost_matrix[r, c] < 10:
                     tracked_vehicles[vehicle_id].update(det_obj, current_frame_number)
 
             # New objects are those that were not assigned
@@ -183,6 +183,9 @@ def main(
         ]
 
         for vehicle_id in objects_to_remove:
+            print(
+                f"Vehicle {vehicle_id} avg speed: {tracked_vehicles[vehicle_id]._speed}"
+            )
             del tracked_vehicles[vehicle_id]
 
         # Draw the Speed Trap Lines for visual reference
