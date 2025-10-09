@@ -3,6 +3,7 @@ import sys
 import click
 import cv2
 import numpy as np
+from cv2.typing import MatLike
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
@@ -79,6 +80,49 @@ def match_detections(
             next_id += 1
 
 
+def draw_tracked_objects(
+    tracked_vehicles: dict[int, Vehicle],
+    frame: MatLike,
+    current_frame_number: int,
+    fps: float,
+):
+    for vehicle_id, vehicle in tracked_vehicles.items():
+        if not vehicle.detected:
+            continue
+
+        # Draw the bounding box on the original frame
+        color = (0, 255, 255) if vehicle.detection.name == "car" else (255, 165, 0)
+        cv2.rectangle(
+            frame,
+            (vehicle.detection.x, vehicle.detection.y),
+            (
+                vehicle.detection.x + vehicle.detection.width,
+                vehicle.detection.y + vehicle.detection.height,
+            ),
+            color,
+            2,
+        )
+
+        speed = calculate_speed(vehicle, current_frame_number, fps)
+        if speed is not None:
+            tracked_vehicles[vehicle_id]._speed = speed
+
+        # Display ID, Class, and Speed
+        display_text = f"ID:{vehicle_id} ({vehicle.detection.name})"
+        if vehicle._speed:
+            display_text += f" | {vehicle._speed} Km/h"
+
+        cv2.putText(
+            frame,
+            display_text,
+            (vehicle.detection.x, vehicle.detection.y - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2,
+        )
+
+
 def main(
     video_path: str, confidence_treshold: float, trap_begin: int, trap_end: int | None
 ) -> int:
@@ -144,41 +188,7 @@ def main(
             )
 
         # Draw tracked objects
-        for vehicle_id, vehicle in tracked_vehicles.items():
-            if not vehicle.detected:
-                continue
-
-            # Draw the bounding box on the original frame
-            color = (0, 255, 255) if vehicle.detection.name == "car" else (255, 165, 0)
-            cv2.rectangle(
-                frame,
-                (vehicle.detection.x, vehicle.detection.y),
-                (
-                    vehicle.detection.x + vehicle.detection.width,
-                    vehicle.detection.y + vehicle.detection.height,
-                ),
-                color,
-                2,
-            )
-
-            speed = calculate_speed(vehicle, current_frame_number, fps)
-            if speed is not None:
-                tracked_vehicles[vehicle_id]._speed = speed
-
-            # Display ID, Class, and Speed
-            display_text = f"ID:{vehicle_id} ({vehicle.detection.name})"
-            if vehicle._speed:
-                display_text += f" | {vehicle._speed} Km/h"
-
-            cv2.putText(
-                frame,
-                display_text,
-                (vehicle.detection.x, vehicle.detection.y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                2,
-            )
+        draw_tracked_objects(tracked_vehicles, frame, current_frame_number, fps)
 
         # Remove objects that haven't been seen for a while
         #
