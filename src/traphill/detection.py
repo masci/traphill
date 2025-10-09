@@ -6,7 +6,7 @@ from .config import VEHICLE_CLASS_IDS
 from .types import Detection, TrapArea
 
 
-def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 40) -> TrapArea:
+def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 25) -> TrapArea:
     """Given the size of the video, return the trap area"""
     width = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))

@@ -20,7 +20,7 @@ PIXELS_TO_METERS_FACTOR = 0.05
 def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float | None:
     """
     Approximates speed (in Km/h) based on pixels traveled over frames elapsed.
-    The speed is calculated for the segment within the trap area.
+    The speed is calculated as the average to cross the trap area.
     """
     try:
         distance_pixels = vehicle.travelled_distance()
@@ -70,7 +70,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
     trap_area = get_trap_area(cap)
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    print("Starting video processing with Ultralytics YOLO...")
+    print("Starting video processing...")
 
     # Process frames
     while cap.isOpened():
