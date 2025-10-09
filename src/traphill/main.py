@@ -38,6 +38,47 @@ def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float |
         return None
 
 
+def match_detections(
+    tracked_vehicles: dict[int, Vehicle],
+    detected_objects: list[Detection],
+    next_id: int,
+    current_frame_number: int,
+) -> None:
+    """Prepare cost matrix for assignment problem.
+
+    Rows: existing tracked objects
+    Columns: new detected objects
+    Value: Euclidean distance
+    """
+    vehicle_ids = list(tracked_vehicles.keys())
+    cost_matrix = np.zeros((len(vehicle_ids), len(detected_objects)), dtype=np.float32)
+
+    for i, vehicle_id in enumerate(vehicle_ids):
+        for j, det_obj in enumerate(detected_objects):
+            cost_matrix[i, j] = det_obj.distance(tracked_vehicles[vehicle_id].detection)
+
+    # Solve the assignment problem
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+    # Process assignments
+    for r, c in zip(row_ind, col_ind):
+        vehicle_id = vehicle_ids[r]
+        det_obj = detected_objects[c]
+
+        # Check if the match is good enough (e.g., distance threshold)
+        if cost_matrix[r, c] < 10:
+            tracked_vehicles[vehicle_id].update(det_obj, current_frame_number)
+
+    # New objects are those that were not assigned
+    assigned_det_indices = set(col_ind)
+    for i, det_obj in enumerate(detected_objects):
+        if i not in assigned_det_indices:
+            tracked_vehicles[next_id] = Vehicle(
+                detection=det_obj, frame_number=current_frame_number
+            )
+            next_id += 1
+
+
 def main(
     video_path: str, confidence_treshold: float, trap_begin: int, trap_end: int | None
 ) -> int:
@@ -96,43 +137,11 @@ def main(
                     detection=obj, frame_number=current_frame_number
                 )
                 next_id += 1
+        # Try to match detected objects to tracked objects
         else:
-            # Prepare cost matrix for assignment problem
-            #
-            # Rows: existing tracked objects
-            # Columns: new detected objects
-            # Value: Euclidean distance
-            vehicle_ids = list(tracked_vehicles.keys())
-            cost_matrix = np.zeros(
-                (len(vehicle_ids), len(detected_objects)), dtype=np.float32
+            match_detections(
+                tracked_vehicles, detected_objects, next_id, current_frame_number
             )
-
-            for i, vehicle_id in enumerate(vehicle_ids):
-                for j, det_obj in enumerate(detected_objects):
-                    cost_matrix[i, j] = det_obj.distance(
-                        tracked_vehicles[vehicle_id].detection
-                    )
-
-            # Solve the assignment problem
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
-
-            # Process assignments
-            for r, c in zip(row_ind, col_ind):
-                vehicle_id = vehicle_ids[r]
-                det_obj = detected_objects[c]
-
-                # Check if the match is good enough (e.g., distance threshold)
-                if cost_matrix[r, c] < 10:
-                    tracked_vehicles[vehicle_id].update(det_obj, current_frame_number)
-
-            # New objects are those that were not assigned
-            assigned_det_indices = set(col_ind)
-            for i, det_obj in enumerate(detected_objects):
-                if i not in assigned_det_indices:
-                    tracked_vehicles[next_id] = Vehicle(
-                        detection=det_obj, frame_number=current_frame_number
-                    )
-                    next_id += 1
 
         # Draw tracked objects
         for vehicle_id, vehicle in tracked_vehicles.items():
