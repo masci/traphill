@@ -9,7 +9,7 @@ from ultralytics import YOLO
 
 from .config import PIXELS_TO_METERS_FACTOR, VEHICLE_CLASS_IDS, YOLO_MODEL
 from .detection import detect_objects, get_trap_area
-from .types import Detection, Vehicle
+from .types import Detection, TrapArea, Vehicle
 
 
 def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float | None:
@@ -123,6 +123,11 @@ def draw_tracked_objects(
         )
 
 
+def draw_speed_trap_area(frame: MatLike, trap_area: TrapArea):
+    cv2.line(frame, (trap_area.x1, 0), (trap_area.x1, trap_area.height), (255, 0, 0), 2)
+    cv2.line(frame, (trap_area.x2, 0), (trap_area.x2, trap_area.height), (0, 0, 255), 2)
+
+
 def main(
     video_path: str, confidence_treshold: float, trap_begin: int, trap_end: int | None
 ) -> int:
@@ -159,6 +164,9 @@ def main(
         if not success:
             print("Failed reading frame from capture, exiting...")
             break
+
+        # Draw the Speed Trap Lines for visual reference
+        draw_speed_trap_area(frame, trap_area)
 
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         detected_objects: list[Detection] = detect_objects(
@@ -206,14 +214,6 @@ def main(
                 f"Vehicle {vehicle_id} avg speed: {tracked_vehicles[vehicle_id]._speed}"
             )
             del tracked_vehicles[vehicle_id]
-
-        # Draw the Speed Trap Lines for visual reference
-        cv2.line(
-            frame, (trap_area.x1, 0), (trap_area.x1, trap_area.height), (255, 0, 0), 2
-        )
-        cv2.line(
-            frame, (trap_area.x2, 0), (trap_area.x2, trap_area.height), (0, 0, 255), 2
-        )
 
         # Show the result
         cv2.imshow("YOLO Vehicle Tracker and Speed Estimator (Ultralytics)", frame)
