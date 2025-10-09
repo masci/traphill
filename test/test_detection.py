@@ -1,6 +1,6 @@
 from unittest import mock
 
-from traphill.main import get_trap_area
+from traphill.detection import get_trap_area
 
 
 def test_get_trap_area():

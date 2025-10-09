@@ -3,11 +3,11 @@ import sys
 import click
 import cv2
 import numpy as np
-from cv2.typing import MatLike
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
-from .types import Detection, TrapArea, Vehicle
+from .detection import detect_objects, get_trap_area
+from .types import Detection, Vehicle
 
 # YOLO config
 YOLO_MODEL = "yolov8n.pt"
@@ -15,15 +15,6 @@ VEHICLE_CLASS_IDS = [2, 3, 5, 7]  # 2: vehicle, 3: motorcycle, 5: bus, 7: truck
 
 # Video config
 PIXELS_TO_METERS_FACTOR = 0.05
-
-
-def get_trap_area(vcap: cv2.VideoCapture, area_percentage: int = 40) -> TrapArea:
-    """Given the size of the video, return the trap area"""
-    width = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    trap_width = int(width / 100 * area_percentage)
-    border = (width - trap_width) // 2
-    return TrapArea(border, width - border, height)
 
 
 def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float | None:
@@ -51,41 +42,6 @@ def calculate_speed(vehicle: Vehicle, current_frame: int, fps: float) -> float |
     except Exception as e:
         print(f"Error calculating speed: {e}")
         return None
-
-
-def detect_objects(
-    model: YOLO,
-    frame: MatLike,
-    confidence_treshold: float,
-    trap_area: TrapArea,
-) -> list[Detection]:
-    """Detect objects and return those within the trap area."""
-    retval: list[Detection] = []
-    results = model.predict(
-        source=frame,
-        conf=confidence_treshold,
-        classes=VEHICLE_CLASS_IDS,
-        verbose=False,  # suppress logging for cleaner output
-    )[0]
-
-    for box in results.boxes:
-        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-        conf = round(box.conf[0].item(), 2)
-        cls_id = int(box.cls[0].item())
-        dt = Detection(
-            x=x1,
-            y=y1,
-            width=x2 - x1,
-            height=y2 - y1,
-            name=model.names.get(cls_id, "Unknown"),
-            conf=conf,
-        )
-        centroid_x, _ = dt.centroid
-
-        # Filter detections to only include those within the speed tracking zone
-        if trap_area.x1 <= centroid_x <= trap_area.x2:
-            retval.append(dt)
-    return retval
 
 
 def main(video_path: str, confidence_treshold: float) -> int:
@@ -188,9 +144,7 @@ def main(video_path: str, confidence_treshold: float) -> int:
                 continue
 
             # Draw the bounding box on the original frame
-            color = (
-                (0, 255, 255) if vehicle.detection.name == "vehicle" else (255, 165, 0)
-            )
+            color = (0, 255, 255) if vehicle.detection.name == "car" else (255, 165, 0)
             cv2.rectangle(
                 frame,
                 (vehicle.detection.x, vehicle.detection.y),
