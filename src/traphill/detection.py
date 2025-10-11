@@ -17,26 +17,28 @@ def get_trap_area(
     return TrapArea(x1, x2, height)
 
 
-def detect_objects(
+def track_vehicles(
     model: YOLO,
     frame: MatLike,
     confidence_treshold: float,
     trap_area: TrapArea,
 ) -> list[Detection]:
-    """Detect objects and return those within the trap area."""
+    """Detect vehicles and return those within the trap area."""
     retval: list[Detection] = []
-    results = model.predict(
+    results = model.track(
         source=frame,
         conf=confidence_treshold,
+        persist=True,
         classes=VEHICLE_CLASS_IDS,
         verbose=False,  # suppress logging for cleaner output
-    )[0]
+    )
 
-    for box in results.boxes:
+    for box in results[0].boxes:
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         conf = round(box.conf[0].item(), 2)
         cls_id = int(box.cls[0].item())
-        dt = Detection(
+        v = Detection(
+            id=int(box.id),
             x=x1,
             y=y1,
             width=x2 - x1,
@@ -44,9 +46,9 @@ def detect_objects(
             name=model.names.get(cls_id, "Unknown"),
             conf=conf,
         )
-        centroid_x, _ = dt.centroid
 
         # Filter detections to only include those within the speed tracking zone
-        if trap_area.x1 <= centroid_x <= trap_area.x2:
-            retval.append(dt)
+        if trap_area.contains(v):
+            retval.append(v)
+
     return retval
