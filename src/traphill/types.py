@@ -35,7 +35,9 @@ class Vehicle:
     speed: float | None = None
 
     def travelled_distance(self) -> float:
-        return self.first_seen.distance(self.current)
+        if self.current:
+            return self.first_seen.distance(self.current)
+        raise ValueError("Current detection is None")
 
     def frames_elapsed(self, current_frame: int) -> int:
         return current_frame - self.first_seen_frame_number
