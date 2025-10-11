@@ -62,41 +62,6 @@ class Vehicle:
         self.speed = round(kmh, 1)
 
 
-# class _Vehicle:
-#     """A class representing a tracked vehicle."""
-
-#     def __init__(self, detection: Detection, frame_number: int) -> None:
-#         self._detection = detection
-#         self._first_seen_detection = detection
-#         self._first_seen_frame_number = frame_number
-#         self._last_seen_frame_number = frame_number
-#         self._speed: float | None = None
-#         self._detected: bool = True
-
-#     def update(self, d: Detection, frame_number: int) -> None:
-#         self._last_seen_frame_number = frame_number
-#         self._detection = d
-#         self._detected = True
-
-#     def travelled_distance(self) -> float:
-#         return self._detection.distance(self._first_seen_detection)
-
-#     def frames_elapsed(self, current_frame: int) -> int:
-#         return current_frame - self._first_seen_frame_number
-
-#     @property
-#     def detected(self) -> bool:
-#         return self._detected
-
-#     @detected.setter
-#     def detected(self, d: bool) -> None:
-#         self._detected = d
-
-#     @property
-#     def detection(self) -> Detection:
-#         return self._detection
-
-
 @dataclass
 class TrapArea:
     x1: int

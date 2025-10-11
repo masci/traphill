@@ -109,24 +109,6 @@ def main(
                 tracked_vehicles[obj.id].current = obj
                 tracked_vehicles[obj.id].calculate_speed(current_frame_number, fps)
 
-        # # If there are no detections, there's nothing to do
-        # if len(detected_objects) == 0:
-        #     # TODO: if we want to start/stop recording when there's no traffic,
-        #     # we could change state here
-        #     pass
-        # # If there are no tracked objects, all detections are new
-        # elif len(tracked_vehicles) == 0:
-        #     for obj in detected_objects:
-        #         tracked_vehicles[next_id] = Vehicle(
-        #             detection=obj, frame_number=current_frame_number
-        #         )
-        #         next_id += 1
-        # # Try to match detected objects to tracked objects
-        # else:
-        #     next_id = match_detections(
-        #         tracked_vehicles, detected_objects, next_id, current_frame_number
-        #     )
-        #
         # This is a simple approach. A more robust solution would be to
         # keep the object for a bit longer, in case it reappears.
         objects_to_remove = [
