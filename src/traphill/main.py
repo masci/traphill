@@ -10,12 +10,14 @@ from .detection import get_trap_area, track_vehicles
 from .types import Detection, TrapArea, Vehicle
 
 
-def draw_tracked_objects(tracked_vehicles: dict[int, Vehicle], frame: MatLike):
+def draw_tracked_objects(
+    tracked_vehicles: dict[int, Vehicle], frame: MatLike, current_frame_number: int
+):
     for tracking in tracked_vehicles.values():
-        vehicle = tracking.current
+        vehicle = tracking.current(current_frame_number)
         if vehicle is None:
             # Nothing to draw, tracking objects has just left the trap area
-            return
+            continue
 
         color = (0, 255, 255) if vehicle.name == "car" else (255, 165, 0)
         cv2.rectangle(
@@ -56,6 +58,7 @@ def main(
     """Main function to run the video processing pipeline using Ultralytics YOLO."""
     current_frame_number = 0
     tracked_vehicles: dict[int, Vehicle] = {}
+    deleted_ids: list[int] = []
 
     # Load YOLO Model
     try:
@@ -89,47 +92,51 @@ def main(
         # Draw the Speed Trap Lines for visual reference
         draw_speed_trap_area(frame, trap_area)
 
-        # Mark all existing tracked objects as potentially lost
-        for vehicle_id in tracked_vehicles:
-            tracked_vehicles[vehicle_id].current = None
-
         current_frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
         detected_objects: list[Detection] = track_vehicles(
-            model, frame, confidence_treshold, trap_area
+            model, frame, current_frame_number, confidence_treshold, trap_area
         )
 
         for obj in detected_objects:
+            if obj.id in deleted_ids:
+                # Remove ghosts
+                continue
+
             if obj.id not in tracked_vehicles:
-                tracked_vehicles[obj.id] = Vehicle(
-                    first_seen=obj,
-                    first_seen_frame_number=current_frame_number,
-                    current=obj,
-                )
+                print(f"Tracking vehicle {obj.id}")
+                tracked_vehicles[obj.id] = Vehicle()
+                tracked_vehicles[obj.id].detections.append(obj)
             else:
-                tracked_vehicles[obj.id].current = obj
+                tracked_vehicles[obj.id].detections.append(obj)
                 tracked_vehicles[obj.id].calculate_speed(current_frame_number, fps)
 
-        # This is a simple approach. A more robust solution would be to
-        # keep the object for a bit longer, in case it reappears.
-        objects_to_remove = [
-            vehicle_id
-            for vehicle_id, vehicle in tracked_vehicles.items()
-            if vehicle.current is None
-            and vehicle.frames_elapsed(current_frame_number) > fps / 2
-        ]
-        for vehicle_id in objects_to_remove:
-            if (
-                tracked_vehicles[vehicle_id].speed
-                and tracked_vehicles[vehicle_id].frames_elapsed(current_frame_number)
-                > 2 * fps
-            ):
-                print(
-                    f"Vehicle {vehicle_id} avg speed: {tracked_vehicles[vehicle_id].speed}"
-                )
-            del tracked_vehicles[vehicle_id]
+            to_remove = []
+            for vehicle_id, vehicle in tracked_vehicles.items():
+                if vehicle.frames_elapsed(current_frame_number) > fps * 5:
+                    print(f"Vehicle {vehicle_id} avg speed: {vehicle.speed}")
+                    deleted_ids.append(vehicle_id)
+                    to_remove.append(vehicle_id)
+
+            for id in to_remove:
+                del tracked_vehicles[id]
+
+        # objects_to_remove = [
+        #     vehicle_id
+        #     for vehicle_id, vehicle in tracked_vehicles.items()
+        #     if vehicle.frames_elapsed(current_frame_number) > fps / 2
+        #     and trap_area.at_border(vehicle.last_seen)
+        # ]
+
+        # for vehicle_id in objects_to_remove:
+        #     if tracked_vehicles[vehicle_id].speed:
+        #         print(
+        #             f"Vehicle {vehicle_id} avg speed: {tracked_vehicles[vehicle_id].speed}"
+        #         )
+        #     del tracked_vehicles[vehicle_id]
+        #     deleted_ids.append(vehicle_id)
 
         # Draw tracked objects
-        draw_tracked_objects(tracked_vehicles, frame)
+        draw_tracked_objects(tracked_vehicles, frame, current_frame_number)
 
         # Show the result
         cv2.imshow("YOLO Vehicle Tracker and Speed Estimator (Ultralytics)", frame)

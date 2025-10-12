@@ -20,6 +20,7 @@ def get_trap_area(
 def track_vehicles(
     model: YOLO,
     frame: MatLike,
+    current_frame_number: int,
     confidence_treshold: float,
     trap_area: TrapArea,
 ) -> list[Detection]:
@@ -45,6 +46,7 @@ def track_vehicles(
             height=y2 - y1,
             name=model.names.get(cls_id, "Unknown"),
             conf=conf,
+            frame_number=current_frame_number,
         )
 
         # Filter detections to only include those within the speed tracking zone
