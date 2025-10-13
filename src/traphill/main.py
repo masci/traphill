@@ -79,6 +79,7 @@ def main(
         return 1
     trap_area = get_trap_area(cap, trap_begin, trap_end)
     fps = cap.get(cv2.CAP_PROP_FPS)
+    delay = int(1000 / fps) if fps > 0 else 1
 
     print("Starting video processing...")
 
@@ -142,7 +143,7 @@ def main(
         cv2.imshow("YOLO Vehicle Tracker and Speed Estimator (Ultralytics)", frame)
 
         # Press q to exit
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        if cv2.waitKey(delay) & 0xFF == ord("q"):
             break
 
     cap.release()
