@@ -78,10 +78,10 @@ def main(
         print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
     trap_area = get_trap_area(cap, trap_begin, trap_end)
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = round(cap.get(cv2.CAP_PROP_FPS))
     delay = int(1000 / fps) if fps > 0 else 1
 
-    print("Starting video processing...")
+    print(f"Starting video processing at {fps} fps.")
 
     # Process frames
     while cap.isOpened():
