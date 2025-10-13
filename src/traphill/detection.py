@@ -35,6 +35,9 @@ def track_vehicles(
     )
 
     for box in results[0].boxes:
+        if box.id is None:
+            continue
+
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         conf = round(box.conf[0].item(), 2)
         cls_id = int(box.cls[0].item())
