@@ -120,7 +120,9 @@ def main(
                 gone = vehicle.last_seen.centroid[0] <= trap_area.x1
 
             if gone:
-                print(f"Vehicle {vehicle_id} avg speed: {vehicle.speed}")
+                print(
+                    f"Vehicle {vehicle_id} avg speed: {vehicle.speed}, {vehicle.direction}"
+                )
                 deleted_ids.append(vehicle_id)
                 to_remove.append(vehicle_id)
 
