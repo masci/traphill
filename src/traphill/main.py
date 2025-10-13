@@ -7,7 +7,7 @@ from ultralytics import YOLO
 
 from .config import VEHICLE_CLASS_IDS, YOLO_MODEL
 from .detection import get_trap_area, track_vehicles
-from .types import Detection, TrapArea, Vehicle
+from .types import Detection, Direction, TrapArea, Vehicle
 
 
 def draw_tracked_objects(
@@ -77,9 +77,10 @@ def main(
     if not cap.isOpened():
         print(f"Error: Could not open video file at {video_path}. Check the path.")
         return 1
+
     trap_area = get_trap_area(cap, trap_begin, trap_end)
     fps = round(cap.get(cv2.CAP_PROP_FPS))
-    delay = int(1000 / fps) if fps > 0 else 1
+    delay = fps // 2
 
     print(f"Starting video processing at {fps} fps.")
 
@@ -106,35 +107,25 @@ def main(
             if obj.id not in tracked_vehicles:
                 print(f"Tracking vehicle {obj.id}")
                 tracked_vehicles[obj.id] = Vehicle()
-                tracked_vehicles[obj.id].detections.append(obj)
-            else:
-                tracked_vehicles[obj.id].detections.append(obj)
-                tracked_vehicles[obj.id].calculate_speed(current_frame_number, fps)
 
-            to_remove = []
-            for vehicle_id, vehicle in tracked_vehicles.items():
-                if vehicle.frames_elapsed(current_frame_number) > fps * 5:
-                    print(f"Vehicle {vehicle_id} avg speed: {vehicle.speed}")
-                    deleted_ids.append(vehicle_id)
-                    to_remove.append(vehicle_id)
+            tracked_vehicles[obj.id].detections.append(obj)
+            tracked_vehicles[obj.id].calculate_speed(current_frame_number, fps)
 
-            for id in to_remove:
-                del tracked_vehicles[id]
+        to_remove = []
+        for vehicle_id, vehicle in tracked_vehicles.items():
+            gone = False
+            if vehicle.direction == Direction.RIGHT:
+                gone = vehicle.last_seen.centroid[0] >= trap_area.x2
+            elif vehicle.direction == Direction.LEFT:
+                gone = vehicle.last_seen.centroid[0] <= trap_area.x1
 
-        # objects_to_remove = [
-        #     vehicle_id
-        #     for vehicle_id, vehicle in tracked_vehicles.items()
-        #     if vehicle.frames_elapsed(current_frame_number) > fps / 2
-        #     and trap_area.at_border(vehicle.last_seen)
-        # ]
+            if gone:
+                print(f"Vehicle {vehicle_id} avg speed: {vehicle.speed}")
+                deleted_ids.append(vehicle_id)
+                to_remove.append(vehicle_id)
 
-        # for vehicle_id in objects_to_remove:
-        #     if tracked_vehicles[vehicle_id].speed:
-        #         print(
-        #             f"Vehicle {vehicle_id} avg speed: {tracked_vehicles[vehicle_id].speed}"
-        #         )
-        #     del tracked_vehicles[vehicle_id]
-        #     deleted_ids.append(vehicle_id)
+        for id in to_remove:
+            del tracked_vehicles[id]
 
         # Draw tracked objects
         draw_tracked_objects(tracked_vehicles, frame, current_frame_number)

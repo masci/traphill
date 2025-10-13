@@ -1,8 +1,16 @@
 from dataclasses import dataclass, field
+from enum import Enum
 
 import numpy as np
 
 from .config import PIXELS_TO_METERS_FACTOR
+
+
+class Direction(Enum):
+    UNKNOWN = 0
+    LEFT = 1
+    RIGHT = 2
+    STILL = 3
 
 
 @dataclass(kw_only=True)
@@ -33,12 +41,6 @@ class Vehicle:
     speed: float | None = None
     detections: list[Detection] = field(default_factory=list)
 
-    def current(self, current_frame: int) -> Detection | None:
-        last_seen = self.last_seen
-        if last_seen.frame_number == current_frame:
-            return last_seen
-        return None
-
     @property
     def first_seen(self) -> Detection:
         return self.detections[0]
@@ -57,6 +59,24 @@ class Vehicle:
         except KeyError:
             raise ValueError("No detections found")
 
+    @property
+    def direction(self) -> Direction:
+        if len(self.detections) < 2:
+            return Direction.UNKNOWN
+
+        elif self.detections[0].x < self.detections[-1].x:
+            return Direction.RIGHT
+        elif self.detections[0].x > self.detections[-1].x:
+            return Direction.LEFT
+        else:
+            return Direction.STILL
+
+    def current(self, current_frame: int) -> Detection | None:
+        last_seen = self.last_seen
+        if last_seen.frame_number == current_frame:
+            return last_seen
+        return None
+
     def travelled_distance(self) -> float:
         return self.first_seen.distance(self.last_seen)
 
@@ -72,7 +92,13 @@ class Vehicle:
         """
         try:
             distance_pixels = self.travelled_distance()
+            if distance_pixels == 0:
+                return None
+
             frames_elapsed = self.frames_elapsed(current_frame)
+            if frames_elapsed == 0:
+                return None
+
         except ValueError:
             return None
 

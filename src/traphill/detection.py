@@ -41,19 +41,17 @@ def track_vehicles(
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         conf = round(box.conf[0].item(), 2)
         cls_id = int(box.cls[0].item())
-        v = Detection(
-            id=int(box.id),
-            x=x1,
-            y=y1,
-            width=x2 - x1,
-            height=y2 - y1,
-            name=model.names.get(cls_id, "Unknown"),
-            conf=conf,
-            frame_number=current_frame_number,
+        retval.append(
+            Detection(
+                id=int(box.id),
+                x=x1,
+                y=y1,
+                width=x2 - x1,
+                height=y2 - y1,
+                name=model.names.get(cls_id, "Unknown"),
+                conf=conf,
+                frame_number=current_frame_number,
+            )
         )
-
-        # Filter detections to only include those within the speed tracking zone
-        if trap_area.contains(v):
-            retval.append(v)
 
     return retval
