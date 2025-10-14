@@ -168,7 +168,7 @@ def main(
 )
 @click.argument(
     "video_path",
-    type=click.Path(exists=True, dir_okay=False, resolve_path=True),
+    type=click.Path(dir_okay=False, resolve_path=True),
 )
 def cli(
     video_path: str, confidence_treshold: float, trap_begin: int, trap_end: int | None
