@@ -85,7 +85,7 @@ class Vehicle:
             return current_frame - self.first_seen_frame_number
         return current_frame - self.last_seen.frame_number
 
-    def calculate_speed(self, current_frame: int, fps: float) -> float | None:
+    def calculate_speed(self, current_frame: int, fps: float) -> None:
         """
         Approximates speed (in Km/h) based on pixels traveled over frames elapsed.
         The speed is calculated as the average to cross the trap area.
