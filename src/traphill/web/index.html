@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Traphill</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>[x-cloak]{display:none!important}</style>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen" x-data="app()" x-init="init()">
+
+  <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+    <span class="font-bold text-lg tracking-wide text-yellow-400">Traphill</span>
+    <span class="text-xs px-2 py-0.5 rounded font-semibold" :class="cam && cam.alive ? 'bg-green-700 text-green-100' : 'bg-red-700 text-red-100'" x-text="cam && cam.alive ? 'LIVE' : 'OFFLINE'"></span>
+  </nav>
+
+  <div class="p-6 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+
+    <!-- Left: stream + config -->
+    <div class="space-y-4">
+
+      <!-- Stream -->
+      <div class="bg-gray-800 rounded-lg overflow-hidden relative">
+        <template x-if="cam">
+          <img :src="'/streams/' + cam.id + '/mjpeg'" class="w-full object-cover" style="min-height:240px" @error="streamError=true" />
+        </template>
+        <div x-show="streamError || !cam" class="flex items-center justify-center bg-gray-900 text-gray-500 text-sm" style="height:240px">No signal</div>
+        <div x-show="latestSpeed !== null" x-cloak class="absolute top-3 right-3 bg-black/70 text-yellow-300 font-bold px-4 py-1.5 rounded-lg text-2xl tabular-nums" x-text="latestSpeed !== null ? latestSpeed.toFixed(1) + ' km/h' : ''"></div>
+      </div>
+
+      <!-- Camera config -->
+      <div x-show="cam" x-cloak class="bg-gray-800 rounded-lg p-4 space-y-3">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="font-semibold" x-text="cam ? cam.name : ''"></h2>
+          <p class="text-xs text-gray-400 truncate max-w-xs" x-text="cam ? cam.url : ''"></p>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Wire A x (px)</label>
+            <input x-model.number="editForm.tripwire.line_a_x" type="number" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Wire B x (px)</label>
+            <input x-model.number="editForm.tripwire.line_b_x" type="number" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Distance (m)</label>
+            <input x-model.number="editForm.tripwire.physical_distance_m" type="number" step="0.1" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Confidence threshold</label>
+            <input x-model.number="editForm.confidence_threshold" type="number" step="0.05" min="0.1" max="1.0" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm" />
+          </div>
+          <div class="flex items-end">
+            <button @click="saveConfig()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-semibold px-4 py-1.5 rounded text-sm">Apply</button>
+          </div>
+        </div>
+        <p x-show="configMsg" x-cloak class="text-sm" :class="configError ? 'text-red-400' : 'text-green-400'" x-text="configMsg"></p>
+      </div>
+
+    </div>
+
+    <!-- Right: events -->
+    <div class="bg-gray-800 rounded-lg p-4 space-y-3">
+      <div class="flex flex-wrap gap-3 items-end">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Min speed (km/h)</label>
+          <input type="number" x-model.number="filters.min_speed" placeholder="—" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Max speed (km/h)</label>
+          <input type="number" x-model.number="filters.max_speed" placeholder="—" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+        </div>
+        <button @click="loadEvents()" class="bg-yellow-500 hover:bg-yellow-400 text-black font-semibold px-4 py-1.5 rounded text-sm">Filter</button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs text-gray-400 uppercase border-b border-gray-700">
+            <tr>
+              <th class="pb-2 pr-4">Class</th>
+              <th class="pb-2 pr-4">Speed</th>
+              <th class="pb-2 pr-4">Direction</th>
+              <th class="pb-2 pr-4">Recorded</th>
+              <th class="pb-2">Flag</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="ev in events" :key="ev.id">
+              <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+                <td class="py-2 pr-4" x-text="ev.vehicle_class"></td>
+                <td class="py-2 pr-4 font-mono" :class="ev.speed_kmh === null ? 'text-gray-500' : 'text-yellow-300'" x-text="ev.speed_kmh !== null ? ev.speed_kmh.toFixed(1) + ' km/h' : 'N/A'"></td>
+                <td class="py-2 pr-4 text-gray-400 text-xs" x-text="ev.direction ? ev.direction.replace('_', ' ') : '—'"></td>
+                <td class="py-2 pr-4 text-gray-500 text-xs" x-text="ev.recorded_at.replace('T',' ').slice(0,19)"></td>
+                <td class="py-2">
+                  <span x-show="ev.incomplete" class="bg-orange-800 text-orange-200 text-xs px-1.5 py-0.5 rounded">partial</span>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="events.length === 0">
+              <td colspan="5" class="py-8 text-center text-gray-500 text-sm">No events yet</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex gap-3 items-center text-sm text-gray-400 pt-1">
+        <button @click="prevPage()" :disabled="eventsOffset===0" class="px-3 py-1 bg-gray-700 rounded disabled:opacity-40">← Prev</button>
+        <span x-show="events.length > 0" x-text="`${eventsOffset + 1}–${eventsOffset + events.length}`"></span>
+        <button @click="nextPage()" :disabled="events.length < eventsLimit" class="px-3 py-1 bg-gray-700 rounded disabled:opacity-40">Next →</button>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+function app() {
+  return {
+    cam: null,
+    streamError: false,
+    latestSpeed: null,
+    editForm: { confidence_threshold: 0.6, tripwire: { line_a_x: 0, line_b_x: 0, physical_distance_m: 10.0 } },
+    configMsg: '',
+    configError: false,
+    events: [],
+    eventsOffset: 0,
+    eventsLimit: 50,
+    filters: { min_speed: '', max_speed: '' },
+    ws: null,
+
+    async init() {
+      const res = await fetch('/cameras');
+      const list = await res.json();
+      if (!list.length) return;
+      this.cam = list[0];
+      this.editForm = {
+        name: this.cam.name,
+        url: this.cam.url,
+        confidence_threshold: this.cam.confidence_threshold,
+        tripwire: { ...this.cam.tripwire },
+      };
+      this.connectWS();
+      this.loadEvents();
+    },
+
+    connectWS() {
+      if (!this.cam) return;
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      this.ws = new WebSocket(`${proto}://${location.host}/streams/${this.cam.id}/ws`);
+      this.ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.speed_kmh !== null) {
+          this.latestSpeed = data.speed_kmh;
+          this.loadEvents();
+        }
+      };
+      this.ws.onclose = () => setTimeout(() => this.connectWS(), 3000);
+    },
+
+    async saveConfig() {
+      this.configMsg = '';
+      const res = await fetch('/cameras/' + this.cam.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.editForm),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        this.configError = true;
+        this.configMsg = err.detail || 'Error saving';
+        return;
+      }
+      location.reload();
+    },
+
+    async loadEvents() {
+      if (!this.cam) return;
+      const params = new URLSearchParams({ camera_id: this.cam.id, limit: this.eventsLimit, offset: this.eventsOffset });
+      if (this.filters.min_speed !== '') params.set('min_speed', this.filters.min_speed);
+      if (this.filters.max_speed !== '') params.set('max_speed', this.filters.max_speed);
+      const res = await fetch('/events?' + params);
+      this.events = (await res.json()).items;
+    },
+
+    prevPage() { this.eventsOffset = Math.max(0, this.eventsOffset - this.eventsLimit); this.loadEvents(); },
+    nextPage() { this.eventsOffset += this.eventsLimit; this.loadEvents(); },
+  };
+}
+</script>
+</body>
+</html>

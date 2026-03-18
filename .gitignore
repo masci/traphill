@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+traphill.db*
+*.db
+config.yaml
+
+# YOLO models
+*.pt
+*.mnn
+*.onnx
+*.mlpackage
